@@ -1,0 +1,6 @@
+name="lemonade-sqlite"
+version="@VERSION@"
+description="Monadic interface to sqlite"
+requires="sqlite3 lemonade"
+archive(byte) = "lemonade_sqlite.cma"
+archive(native) = "lemonade_sqlite.cmxa"

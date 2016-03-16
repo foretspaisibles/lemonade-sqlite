@@ -1,0 +1,10 @@
+compiler:
+  - 4.00.1
+  - 4.01.0
+  - 4.02.3
+repository:
+  - broken
+  - lemonade
+  - mixture
+  - ocamlfind
+  - sqlite3
