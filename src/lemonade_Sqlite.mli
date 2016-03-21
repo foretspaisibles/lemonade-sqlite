@@ -83,7 +83,7 @@ and data = Sqlite3.Data.t =
 type statement
 (** The abstract type of SQL statements. *)
 
-type binding = (string * (unit -> data)) list
+type binding = (string * data) list
 (** The type of variable binding definitions. These can be applied
     to statements or used with a query. *)
 

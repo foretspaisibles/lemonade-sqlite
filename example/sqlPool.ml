@@ -82,7 +82,7 @@ CREATE VIEW persistance_batch AS
 SELECT
   *
 FROM batch_index LEFT JOIN persistance_query
-  WHERE batch_index.id = persistance_query.batch_id;
+  WHERE batch_index.id = persistance_query.batch_id
 "
 
 let insert_batch_index = "\

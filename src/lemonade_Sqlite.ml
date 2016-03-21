@@ -102,6 +102,10 @@ struct
     debug handle;
     errorm name description
 
+  let log_error label m =
+    recover m
+      (function (name, mesg) as err -> eprintf "%s %s: %s\n%!" label name mesg; error err)
+
   let db_open ?mode ?mutex ?cache ?vfs filename =
     try return(Sqlite3.db_open ?mode ?mutex ?cache ?vfs filename)
     with Sqlite3.Error(message) -> errorm "db_open" message
@@ -212,7 +216,7 @@ module S =
 
 module Binding =
 struct
-  type t = (string * (unit -> data)) list
+  type t = (string * data) list
   let empty = []
 end
 
@@ -232,11 +236,8 @@ end = struct
   type t = {
     sql: string;
     handle: Sqlite3.db;
-    mutable code: code;
+    mutable code: statement list;
   }
-  and code =
-    | NotCompiled
-    | Precompiled of statement list
   and statement = {
     statement: Sqlite3.stmt;
     variables: (string * int) list;
@@ -244,12 +245,6 @@ end = struct
     shandle: Sqlite3.db;
   }
 
-  let make sql handle =
-    Success.return {
-      sql;
-      handle;
-      code = NotCompiled;
-    }
 
   let make_statement shandle sql stmt =
     let rec variables stmt ax k n =
@@ -272,29 +267,34 @@ end = struct
       shandle;
     }
 
-  let precompile x =
+  let precompile handle sql =
     let rec loop ax stmt =
       Success.prepare_tail stmt
       >>= begin function
         | None -> Success.return (return (List.rev ax))
         | Some(tail) ->
-            make_statement x.handle x.sql tail >>= pack ax
+            make_statement handle sql tail >>= pack ax
       end
     and pack ax y =
       loop (y::ax) y.statement
     and return ax =
-      x.code <- Precompiled(ax);
       ax
     in
-    Success.prepare x.handle x.sql
-    >>= make_statement x.handle x.sql
+    Success.prepare handle sql
+    >>= make_statement handle sql
     >>= pack []
 
-  let statements x =
-    (match x.code with
-     | Precompiled(lst) -> Success.return lst
-     | NotCompiled -> precompile x)
-    >>= fun lst -> Success.return(lst)
+  let make sql handle =
+    precompile handle sql
+    >>= fun code ->
+    Success.return {
+      sql;
+      handle;
+      code;
+    }
+
+    let statements x =
+      Success.return x.code
 
   let bind_statement binding stmt =
     let callback name =
@@ -303,7 +303,6 @@ end = struct
     in
     let bind_parameter (name, k) =
       callback name
-      >|= (fun f -> f ())
       >>= fun x ->
       Success.bind_parameter stmt.statement k x
       >>= function
@@ -355,12 +354,11 @@ end = struct
     S.from(retrieve_rows stmt (bind_statement binding stmt))
 
   let finalize cstmt =
-    match cstmt.code with
-    | NotCompiled -> Success.return ()
-    | Precompiled(lst) ->
-        Success.stepthrough (fun stmt -> Success.finalize_safe stmt.statement) lst
+    Success.stepthrough
+      (fun stmt -> Success.finalize_safe stmt.statement)
+      cstmt.code
         >>= function
-        | Sqlite3.Rc.OK -> (cstmt.code <- NotCompiled; Success.return ())
+        | Sqlite3.Rc.OK -> (Success.return ())
         | whatever -> Success.failwith_sqlite3 "CompiledStatement.finalize" whatever cstmt.handle
 end
 
@@ -399,7 +397,7 @@ module Handle : sig
   type t
   val make : string -> t
   val release : t -> unit
-  val prepare : ConcreteStatement.t -> t -> CompiledStatement.t Success.t
+  val prepare : ConcreteStatement.t -> t -> CompiledStatement.statement list Success.t
   val last_insert_rowid : t -> int64 Success.t
 end = struct
   let cache_sz = 100
@@ -438,8 +436,10 @@ end = struct
         Pervasives.ignore(Sqlite3.sleep retry_delay);
         Success.db_close handle.sqlitedb >>= retry (n-1)
       end else
-        Success.errorf "closedb" "Cannot close database '%s'."
+        Success.errorf "closedb" "%s: Cannot close database '%s' (%s)."
+          (Sqlite3.Rc.to_string (Sqlite3.errcode handle.sqlitedb))
           handle.filename
+          (Sqlite3.errmsg handle.sqlitedb)
     in
     Success.unsafe_run begin
       finalize_cache handle
@@ -449,13 +449,16 @@ end = struct
 
   let prepare concrete handle =
     let open Success.Infix in
-    try Success.return(StatementTable.find handle.cache concrete)
-    with Not_found -> begin
-        CompiledStatement.make concrete.ConcreteStatement.sql handle.sqlitedb
-        >>= fun stmt ->
-        StatementTable.add handle.cache concrete stmt;
-        Success.return stmt
-      end
+    let stmt =
+      try Success.return(StatementTable.find handle.cache concrete)
+      with Not_found -> begin
+          CompiledStatement.make concrete.ConcreteStatement.sql handle.sqlitedb
+          >>= fun stmt ->
+          StatementTable.add handle.cache concrete stmt;
+          Success.return stmt
+        end
+    in
+    stmt >>= CompiledStatement.statements
 
   let last_insert_rowid handle =
     Success.last_insert_rowid handle.sqlitedb
@@ -494,7 +497,6 @@ let exec cstmt handle =
     | [] -> Success.return ()
   in
   Handle.prepare cstmt handle
-  >>= CompiledStatement.statements
   >>= loop
   >>= maybe_store_last_insert_rowid cstmt handle
 
@@ -512,7 +514,6 @@ let query ?binding concrete handle =
     | None -> concrete
   in
   Handle.prepare concrete handle
-  >>= CompiledStatement.statements
   |> stream_of_slist
   |> S.map (CompiledStatement.query concrete.ConcreteStatement.binding)
   |> S.concat
@@ -574,7 +575,7 @@ let rowid_binding r =
 
 let bindings p s =
   let f x =
-    List.map (fun(key, get) -> key, fun () -> get x) p
+    List.map (fun(key, get) -> key, get x) p
   in
   S.map f s
 
