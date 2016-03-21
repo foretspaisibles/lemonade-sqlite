@@ -83,11 +83,11 @@ and data = Sqlite3.Data.t =
 type statement
 (** The abstract type of SQL statements. *)
 
-type binding
-(** The abstact type of variable bindings. These can be applied
-    to statements. *)
+type binding = (string * (unit -> data)) list
+(** The type of variable binding definitions. These can be applied
+    to statements or used with a query. *)
 
-val query : statement -> handle -> row S.t
+val query : ?binding:binding -> statement -> handle -> row S.t
 (** [query statement] is the stream of rows returned by the
     [statement]. *)
 
