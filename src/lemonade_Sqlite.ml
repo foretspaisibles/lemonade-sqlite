@@ -504,8 +504,13 @@ let stream_of_slist m =
   | Success.Success(lst) -> S.of_list lst
   | Success.Error(_ as err) ->  S.from (fun _ -> Success.error err)
 
-let query concrete handle =
+let query ?binding concrete handle =
   let open Success.Infix in
+  let concrete =
+    match binding with
+    | Some(b) -> ConcreteStatement.apply concrete b
+    | None -> concrete
+  in
   Handle.prepare concrete handle
   >>= CompiledStatement.statements
   |> stream_of_slist
