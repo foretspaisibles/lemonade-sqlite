@@ -212,7 +212,7 @@ module S =
 
 module Binding =
 struct
-  type t = (string * (unit -> data)) list
+  type t = (string * data) list
   let empty = []
 end
 
@@ -303,7 +303,6 @@ end = struct
     in
     let bind_parameter (name, k) =
       callback name
-      >|= (fun f -> f ())
       >>= fun x ->
       Success.bind_parameter stmt.statement k x
       >>= function
@@ -574,7 +573,7 @@ let rowid_binding r =
 
 let bindings p s =
   let f x =
-    List.map (fun(key, get) -> key, fun () -> get x) p
+    List.map (fun(key, get) -> key, get x) p
   in
   S.map f s
 
