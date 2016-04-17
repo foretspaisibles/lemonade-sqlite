@@ -145,3 +145,6 @@ val pp_print_data : Format.formatter -> data -> unit
 
 val pp_print_row : Format.formatter -> row -> unit
 (** Pretty printer for sqlite data rows. *)
+
+val pp_print_statement : Format.formatter -> statement -> unit
+(** Pretty printer for statements. *)

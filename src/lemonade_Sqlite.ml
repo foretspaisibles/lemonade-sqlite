@@ -218,6 +218,14 @@ module Binding =
 struct
   type t = (string * data) list
   let empty = []
+
+  let pp_print pp binding =
+    let open Format in
+    fprintf pp "[@[@ ";
+    List.iter
+      (fun (key, value) -> fprintf pp "@[%s,@ %a@];@ " key pp_print_data value)
+      binding;
+    fprintf pp "@]["
 end
 
 module CompiledStatement : sig
@@ -387,8 +395,23 @@ struct
 
   let apply ?rowid statement binding =
     { statement with binding; last_insert_rowid = rowid; }
+
+  let pp_print pp s =
+    let open Format in
+    let pp_print_optref pp x =
+      match x with
+      | None -> fprintf pp "None"
+      | Some(r) -> fprintf pp "Some(!%Ld)" !r
+    in
+    fprintf pp "ConcreteStatement{@[@ sql = %S;@ hash = %d;@ binding = %a;@ last_insert_row_id = %a;@ @]}"
+      s.sql
+      s.hash
+      Binding.pp_print s.binding
+      pp_print_optref s.last_insert_rowid
 end
 
+let pp_print_statement =
+  ConcreteStatement.pp_print
 
 module StatementTable =
   Hashtbl.Make(ConcreteStatement)
