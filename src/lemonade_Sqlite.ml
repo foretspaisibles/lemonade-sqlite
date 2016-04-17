@@ -508,20 +508,25 @@ let maybe_store_last_insert_rowid concrete handle () =
       Handle.last_insert_rowid handle
       >>= function id -> x := id; Success.return()
 
-let exec cstmt handle =
+let exec ?binding concrete handle =
   let open Success.Infix in
+  let concrete =
+    match binding with
+    | Some(b) -> ConcreteStatement.apply concrete b
+    | None -> concrete
+  in
   let rec loop lst =
     match lst with
     | stmt :: tl ->
         CompiledStatement.exec
-          cstmt.ConcreteStatement.binding
+          concrete.ConcreteStatement.binding
           stmt
         >>= fun () -> loop tl
     | [] -> Success.return ()
   in
-  Handle.prepare cstmt handle
+  Handle.prepare concrete handle
   >>= loop
-  >>= maybe_store_last_insert_rowid cstmt handle
+  >>= maybe_store_last_insert_rowid concrete handle
 
 let stream_of_slist m =
   let open Success.Infix in
