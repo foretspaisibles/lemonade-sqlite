@@ -104,7 +104,7 @@ val project : ('a -> 'b * 'c ) -> 'a S.t -> ('b * 'c list) S.t
     [p] on stream items, to extract a base and a fibre value.  Consecutive
     fibre values above a given [base] are bundled together. *)
 
-val exec : statement -> handle -> unit t
+val exec : ?binding:binding -> statement -> handle -> unit t
 (** [exec commmands] is a monad applying the statements provided by
     [commands] and ignoring produced rows if any. *)
 
