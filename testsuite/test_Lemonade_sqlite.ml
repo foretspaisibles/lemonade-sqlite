@@ -195,6 +195,62 @@ let test_project () =
   in
   assert_equal "project" f challenge answer
 
+
+let test_insert_concat () =
+  let init = "DROP TABLE IF EXISTS b;\
+     CREATE TABLE b (number INT, name TEXT);\
+     DROP TABLE IF EXISTS c;\
+     CREATE TABLE c (number INT, name TEXT)"
+  in
+  let insert_b =
+    Sqlite.statement "INSERT INTO b VALUES($number, $name)"
+  in
+  let insert_c =
+    Sqlite.statement "INSERT INTO c VALUES($number, $name)"
+  in
+  let bindings lst = Sqlite.bindings [
+      "$number", (fun (number, _) -> Sqlite.INT(Int64.of_int number));
+      "$name", (fun (_, name) -> Sqlite.TEXT(name));
+    ] (Sqlite.S.of_list lst)
+  in
+  let is_odd (k, _) =
+    k mod 2 = 1
+  in
+  let is_even x =
+    not(is_odd x)
+  in
+  let data = [
+      1, "apple";
+      2, "pear";
+      3, "pineapple";
+      4, "strawberry";
+    ]
+  in
+  assert_sqlite_exec "insert_concat"
+    begin fun db ->
+      Sqlite.insert begin
+        Sqlite.S.concat (Sqlite.S.of_list [
+            Sqlite.S.of_list [
+              Sqlite.statement init
+            ];
+            Sqlite.bindings_apply
+              (bindings (List.filter is_odd data))
+              insert_b;
+            Sqlite.bindings_apply
+              (bindings (List.filter is_even data))
+              insert_c;
+          ])
+      end db
+    end
+    "SELECT * FROM b ORDER BY number ASC;SELECT * FROM c ORDER BY number ASC"
+    [
+      "1|apple";
+      "3|pineapple";
+      "2|pear";
+      "4|strawberry";
+    ]
+
+
 let () = register_suite "Sqlite"
     "Test the monadic sqlite interface" [
 
@@ -209,4 +265,5 @@ let () = register_suite "Sqlite"
     test_rowid ();
     test_query ();
     test_project ();
+    test_insert_concat ();
   ]
