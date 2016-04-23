@@ -102,10 +102,20 @@ let test_open_create () =
     | Sqlite.Error(name, mesg) -> ksprintf failwith "%s: %s" name mesg
   end ()
 
-let test_create_table () =
+let test_drop_tables() =
   let sql =
     "DROP TABLE IF EXISTS a;\
-     CREATE TABLE a (number INT, name TEXT)"
+     DROP TABLE IF EXISTS b;\
+     DROP TABLE IF EXISTS c"
+  in
+  assert_sqlite_exec "drop_tables"
+    (Sqlite.exec (Sqlite.statement sql))
+    ".tables"
+    []
+
+let test_create_table () =
+  let sql =
+    "CREATE TABLE IF NOT EXISTS a (number INT, name TEXT)"
   in
   assert_sqlite_exec "create_table"
     (Sqlite.exec (Sqlite.statement sql))
@@ -264,6 +274,7 @@ let () = register_suite "Sqlite"
       [ "a"; "b" ];
 
     test_open_create ();
+    test_drop_tables ();
     test_create_table ();
     test_insert ();
     test_rowid ();
