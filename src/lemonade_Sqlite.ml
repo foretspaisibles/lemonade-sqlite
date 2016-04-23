@@ -23,28 +23,32 @@ let pp_print_blob pp s =
   let open Format in
   String.iter (fun c -> fprintf pp "\\x%2x" (Char.code c)) s
 
-let pp_print_data pp data =
+let pp_print_data ff data =
   let open Format in
   match data with
-  | NONE -> fprintf pp "NONE"
-  | NULL -> fprintf pp "NULL"
-  | INT(n) -> fprintf pp "INT(%Ld)" n
-  | FLOAT(x) -> fprintf pp "FLOAT(%f)" x
-  | TEXT(s) -> fprintf pp "TEXT(%S)" s
-  | BLOB(s) -> fprintf pp "BLOB(%a)" pp_print_blob s
+  | NONE -> fprintf ff "NONE"
+  | NULL -> fprintf ff "NULL"
+  | INT(n) -> fprintf ff "INT(%Ld)" n
+  | FLOAT(x) -> fprintf ff "FLOAT(%f)" x
+  | TEXT(s) -> fprintf ff "TEXT(%S)" s
+  | BLOB(s) -> fprintf ff "BLOB(%a)" pp_print_blob s
 
-let pp_print_row pp row =
+let pp_print_row ff row =
   let open Format in
-  fprintf pp "[| %a |]"
-    (fun pp row ->
-       Array.iter (fun data -> fprintf pp "%a; " pp_print_data data) row)
-    row
+  let flag = ref false in
+  let loop item =
+    if !flag then fprintf ff ";@ ";
+    flag := true;
+    fprintf ff "%a" pp_print_data item
+  in
+  fprintf ff "@[<hov 2>[|";
+  Array.iter loop row;
+  fprintf ff "|]@]"
 
-let debug_row row =
-  Format.fprintf Format.str_formatter "DEBUG: query: %a"
-    pp_print_row row;
+let debug label f x =
+  Format.fprintf Format.str_formatter "DEBUG: %s: %a"
+    label f x;
   eprintf "%s\n%!" (Format.flush_str_formatter ())
-
 
 module Error =
 struct
@@ -221,11 +225,10 @@ struct
 
   let pp_print pp binding =
     let open Format in
-    fprintf pp "[@[@ ";
-    List.iter
-      (fun (key, value) -> fprintf pp "@[%s,@ %a@];@ " key pp_print_data value)
-      binding;
-    fprintf pp "@]["
+    let pp_print_item pp (key, value) =
+      fprintf pp "@[<hv 2>%S,@ %a@]" key pp_print_data value
+    in
+    Lemonade_List.pp_print pp_print_item pp binding
 end
 
 module CompiledStatement : sig
@@ -257,18 +260,29 @@ end = struct
   let pp_print_statement pp s =
     let open Format in
     let pp_print_pair pp (label, index) =
-      fprintf pp "(%S,@ %d)" label index
+      fprintf pp "@[<hv 1>(%S,@ %d)@]" label index
     in
     let pp_print_variables pp lst =
       Lemonade_List.pp_print pp_print_pair pp lst
     in
-    fprintf pp "CompiledStatement.{@[@ statement = <abstr>;@ variables = %a;@ variables_n = %d;@ shandle = <abstr;>;@ @]}"
+    fprintf pp
+      "@[<hv 1>CompiledStatement.{@ \
+       @[<hv 1>statement =@ <abstr>@];@ \
+       @[<hv 1>variables =@ %a@];@ \
+       @[<hv 1>variables_n =@ %d@];@ \
+                @[<hv 1>shandle =@ <abstr>@];@ \
+       @]}"
       pp_print_variables s.variables
       s.variables_n
 
   let pp_print pp x =
     let open Format in
-    fprintf pp "CompiledStatement.{@[@ sql = %S;@ handle = <abstr.> (* %s: %s *);@ code = %a; @]}"
+    fprintf pp
+      "@[<hv 1>CompiledStatement.{@ \
+       @[<hv 1>sql =@ %S@];@ \
+       @[<hv 1>handle =@ <abstr> @[<hov 3>(* %s:@ %s *)@]@];@ \
+       @[<hv 1>code =@ %a@];@ \
+       @]}"
       x.sql
       (Sqlite3.Rc.to_string (Sqlite3.errcode x.handle))
       (Sqlite3.errmsg x.handle)
@@ -423,7 +437,13 @@ struct
       | None -> fprintf pp "None"
       | Some(r) -> fprintf pp "Some(!%Ld)" !r
     in
-    fprintf pp "ConcreteStatement{@[@ sql = %S;@ hash = %d;@ binding = %a;@ last_insert_row_id = %a;@ @]}"
+    fprintf pp
+      "@[<hv 1>ConcreteStatement.{@ \
+       @[<hv 1>sql =@ %S@];@ \
+       @[<hv 1>hash =@ %d@];@ \
+       @[<hv 1>binding =@ %a@];@ \
+       @[<hv 1>last_insert_row_id = %a@];@ \
+       @]}"
       s.sql
       s.hash
       Binding.pp_print s.binding
@@ -454,35 +474,37 @@ end = struct
     sqlitedb: Sqlite3.db;
   }
 
+  let pp_print_cache_item ff (k, v) =
+    let open Format in
+    fprintf ff "@[<hv 1>%a,@ %a@]"
+      ConcreteStatement.pp_print k
+      CompiledStatement.pp_print v
+
+  let pp_print_cache ff cache =
+    let open Format in
+    let flag = ref false in
+    let loop k v =
+      if !flag then fprintf ff ";@ ";
+      flag := true;
+      fprintf ff "%a" pp_print_cache_item (k, v)
+    in
+    fprintf ff "@[<hov 1>[";
+    StatementTable.iter loop cache;
+    fprintf ff "]@]"
+
+
   let pp_print pp handle =
     let open Format in
-    let pp_print_cache pp cache =
-      let sep = ref false in
-      fprintf pp "[@[@ ";
-      StatementTable.iter
-        (fun k v ->
-           if !sep then fprintf pp ";@ ";
-           fprintf pp "(%a, %a)"
-             ConcreteStatement.pp_print k
-             CompiledStatement.pp_print v;
-           sep := true)
-        cache;
-      fprintf pp "@ ]@]";
-    in
-    fprintf pp "Handle.{@[@ cache = %a;@ filename = %S;@ sqlitedb = <abstr.> (* %s: %s *); @]}"
+    fprintf pp
+      "@[<hv 1>Handle.{@ \
+       @[<hv 1>cache =@ %a@];@ \
+       @[<hv 1>filename =@ %S@];@ \
+       @[<hv 1>sqlitedb =@ <abstr>@ @[<hv 3>(* %s:@ %s *)@]@];@ \
+       @]}"
       pp_print_cache handle.cache
       handle.filename
       (Sqlite3.Rc.to_string (Sqlite3.errcode handle.sqlitedb))
       (Sqlite3.errmsg handle.sqlitedb)
-
-  let debug label handle =
-    Format.fprintf Format.str_formatter "DEBUG: %s: %a"
-      label
-      pp_print handle;
-    eprintf "%s\n%!" (Format.flush_str_formatter ())
-
-
-
 
   let make filename = {
     cache = StatementTable.create cache_sz;
