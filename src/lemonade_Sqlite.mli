@@ -148,3 +148,6 @@ val pp_print_row : Format.formatter -> row -> unit
 
 val pp_print_statement : Format.formatter -> statement -> unit
 (** Pretty printer for statements. *)
+
+val pp_print_handle : Format.formatter -> handle -> unit
+(** Pretty printer for database handles. *)

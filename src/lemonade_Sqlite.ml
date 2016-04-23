@@ -235,6 +235,7 @@ module CompiledStatement : sig
   val exec : Binding.t -> statement -> unit Success.t
   val query : Binding.t -> statement -> row S.t
   val finalize : t -> unit Success.t
+  val pp_print : Format.formatter -> t -> unit
 end = struct
   open Success.Infix
 
@@ -253,6 +254,25 @@ end = struct
     shandle: Sqlite3.db;
   }
 
+  let pp_print_statement pp s =
+    let open Format in
+    let pp_print_pair pp (label, index) =
+      fprintf pp "(%S,@ %d)" label index
+    in
+    let pp_print_variables pp lst =
+      Lemonade_List.pp_print pp_print_pair pp lst
+    in
+    fprintf pp "CompiledStatement.{@[@ statement = <abstr>;@ variables = %a;@ variables_n = %d;@ shandle = <abstr;>;@ @]}"
+      pp_print_variables s.variables
+      s.variables_n
+
+  let pp_print pp x =
+    let open Format in
+    fprintf pp "CompiledStatement.{@[@ sql = %S;@ handle = <abstr.> (* %s: %s *);@ code = %a; @]}"
+      x.sql
+      (Sqlite3.Rc.to_string (Sqlite3.errcode x.handle))
+      (Sqlite3.errmsg x.handle)
+      (Lemonade_List.pp_print pp_print_statement) x.code
 
   let make_statement shandle sql stmt =
     let rec variables stmt ax k n =
@@ -422,6 +442,7 @@ module Handle : sig
   val release : t -> unit
   val prepare : ConcreteStatement.t -> t -> CompiledStatement.statement list Success.t
   val last_insert_rowid : t -> int64 Success.t
+  val pp_print : Format.formatter -> t -> unit
 end = struct
   let cache_sz = 100
   let retry_delay = 10
@@ -432,6 +453,36 @@ end = struct
     filename: string;
     sqlitedb: Sqlite3.db;
   }
+
+  let pp_print pp handle =
+    let open Format in
+    let pp_print_cache pp cache =
+      let sep = ref false in
+      fprintf pp "[@[@ ";
+      StatementTable.iter
+        (fun k v ->
+           if !sep then fprintf pp ";@ ";
+           fprintf pp "(%a, %a)"
+             ConcreteStatement.pp_print k
+             CompiledStatement.pp_print v;
+           sep := true)
+        cache;
+      fprintf pp "@ ]@]";
+    in
+    fprintf pp "Handle.{@[@ cache = %a;@ filename = %S;@ sqlitedb = <abstr.> (* %s: %s *); @]}"
+      pp_print_cache handle.cache
+      handle.filename
+      (Sqlite3.Rc.to_string (Sqlite3.errcode handle.sqlitedb))
+      (Sqlite3.errmsg handle.sqlitedb)
+
+  let debug label handle =
+    Format.fprintf Format.str_formatter "DEBUG: %s: %a"
+      label
+      pp_print handle;
+    eprintf "%s\n%!" (Format.flush_str_formatter ())
+
+
+
 
   let make filename = {
     cache = StatementTable.create cache_sz;
@@ -486,6 +537,9 @@ end = struct
   let last_insert_rowid handle =
     Success.last_insert_rowid handle.sqlitedb
 end
+
+let pp_print_handle =
+  Handle.pp_print
 
 include Success
 

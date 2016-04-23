@@ -27,6 +27,10 @@ let log row =
     Sqlite.pp_print_row row;
   eprintf "%s\n%!" (Format.flush_str_formatter ())
 
+let log_handle handle =
+  Format.fprintf Format.str_formatter "DEBUG: Log handle: %a"
+    Sqlite.pp_print_handle handle;
+  eprintf "%s\n%!" (Format.flush_str_formatter ())
 
 let database () =
   "unit_testing.db"
