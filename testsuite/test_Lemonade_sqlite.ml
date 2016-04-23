@@ -27,6 +27,10 @@ let log row =
     Sqlite.pp_print_row row;
   eprintf "%s\n%!" (Format.flush_str_formatter ())
 
+let log_handle handle =
+  Format.fprintf Format.str_formatter "DEBUG: Log handle: %a"
+    Sqlite.pp_print_handle handle;
+  eprintf "%s\n%!" (Format.flush_str_formatter ())
 
 let database () =
   "unit_testing.db"
@@ -98,10 +102,20 @@ let test_open_create () =
     | Sqlite.Error(name, mesg) -> ksprintf failwith "%s: %s" name mesg
   end ()
 
-let test_create_table () =
+let test_drop_tables() =
   let sql =
     "DROP TABLE IF EXISTS a;\
-     CREATE TABLE a (number INT, name TEXT)"
+     DROP TABLE IF EXISTS b;\
+     DROP TABLE IF EXISTS c"
+  in
+  assert_sqlite_exec "drop_tables"
+    (Sqlite.exec (Sqlite.statement sql))
+    ".tables"
+    []
+
+let test_create_table () =
+  let sql =
+    "CREATE TABLE IF NOT EXISTS a (number INT, name TEXT)"
   in
   assert_sqlite_exec "create_table"
     (Sqlite.exec (Sqlite.statement sql))
@@ -195,6 +209,62 @@ let test_project () =
   in
   assert_equal "project" f challenge answer
 
+
+let test_insert_concat () =
+  let init = "DROP TABLE IF EXISTS b;\
+     CREATE TABLE b (number INT, name TEXT);\
+     DROP TABLE IF EXISTS c;\
+     CREATE TABLE c (number INT, name TEXT)"
+  in
+  let insert_b =
+    Sqlite.statement "INSERT INTO b VALUES($number, $name)"
+  in
+  let insert_c =
+    Sqlite.statement "INSERT INTO c VALUES($number, $name)"
+  in
+  let bindings lst = Sqlite.bindings [
+      "$number", (fun (number, _) -> Sqlite.INT(Int64.of_int number));
+      "$name", (fun (_, name) -> Sqlite.TEXT(name));
+    ] (Sqlite.S.of_list lst)
+  in
+  let is_odd (k, _) =
+    k mod 2 = 1
+  in
+  let is_even x =
+    not(is_odd x)
+  in
+  let data = [
+      1, "apple";
+      2, "pear";
+      3, "pineapple";
+      4, "strawberry";
+    ]
+  in
+  assert_sqlite_exec "insert_concat"
+    begin fun db ->
+      Sqlite.insert begin
+        Sqlite.S.concat (Sqlite.S.of_list [
+            Sqlite.S.of_list [
+              Sqlite.statement init
+            ];
+            Sqlite.bindings_apply
+              (bindings (List.filter is_odd data))
+              insert_b;
+            Sqlite.bindings_apply
+              (bindings (List.filter is_even data))
+              insert_c;
+          ])
+      end db
+    end
+    "SELECT * FROM b ORDER BY number ASC;SELECT * FROM c ORDER BY number ASC"
+    [
+      "1|apple";
+      "3|pineapple";
+      "2|pear";
+      "4|strawberry";
+    ]
+
+
 let () = register_suite "Sqlite"
     "Test the monadic sqlite interface" [
 
@@ -204,9 +274,11 @@ let () = register_suite "Sqlite"
       [ "a"; "b" ];
 
     test_open_create ();
+    test_drop_tables ();
     test_create_table ();
     test_insert ();
     test_rowid ();
     test_query ();
     test_project ();
+    test_insert_concat ();
   ]
