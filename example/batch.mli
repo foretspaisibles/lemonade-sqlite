@@ -42,7 +42,7 @@ and status =
   | Success
   | Error
 
-val format : Format.formatter -> t -> unit
+val pp_print : Format.formatter -> t -> unit
 (** Formatter for query batches. *)
 
 val print : t -> unit
