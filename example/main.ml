@@ -52,7 +52,8 @@ let populate handle =
   >>= exit_success
 
 let dump handle =
-  Sqlite.S.iter Batch.print
+  Sqlite.S.iter
+    (fun batch -> Format.fprintf Format.std_formatter "@[%a@]@;" Batch.pp_print batch)
     (BatchCollection.contents handle)
   >>= exit_success
 

@@ -78,40 +78,44 @@ let make (
   batch_response = List.map make_response spec_response;
 }
 
-let format_list_generic delim_open delim_close ppt format_item lst =
-  let rec loop ppt = function
-    | hd :: [] -> format_item ppt hd
-    | hd :: tl -> fprintf ppt "%a;@ " format_item hd; loop ppt tl
-    | [] -> ()
+let pp_print_list_generic delim_open delim_close ff pp_print_item lst =
+  let open Format in
+  let flag = ref false in
+  let loop item =
+    if !flag then fprintf ff ";@ ";
+    flag := true;
+    fprintf ff "%a" pp_print_item item
   in
-  fprintf ppt "@[<hv 2>%c %a %c@]" delim_open loop lst delim_close
+  fprintf ff "@[<hov 1>%c" delim_open;
+  List.iter loop lst;
+  fprintf ff "%c@]" delim_close
 
-let format_list ppt format_item lst =
-  format_list_generic '[' ']' ppt format_item lst
+let pp_print_list ff pp_print_item lst =
+  pp_print_list_generic '[' ']' ff pp_print_item lst
 
-type 'a format_record_spec =
+type 'a pp_print_record_spec =
   | Format_int of ('a -> int)
   | Format_string of ('a -> string)
   | Format_float of ('a -> float)
 
-let format_record spec ppt record =
-  let format_item ppt (label, formatter) =
+let pp_print_record spec ff record =
+  let pp_print_item ff (label, formatter) =
     match formatter with
-    | Format_int(get_int) -> fprintf ppt "@[ %s = %d; @]"
+    | Format_int(get_int) -> fprintf ff "@[<hv 1>%s =@ %d@]"
                                label (get_int record)
-    | Format_string(get_string) -> fprintf ppt "@[ %s = %S; @]"
+    | Format_string(get_string) -> fprintf ff "@[<hv 1>%s =@ %S@]"
                                      label (get_string record)
-    | Format_float(get_float) -> fprintf ppt "@[ %s = %5.3f; @]"
+    | Format_float(get_float) -> fprintf ff "@[<hv 1>%s =@ %5.3f@]"
                                    label (get_float record)
   in
-  format_list_generic '{' '}' ppt format_item spec
+  pp_print_list_generic '{' '}' ff pp_print_item spec
 
 let pp_print_ocamlstring ppt s =
   fprintf ppt "%S" s
 
-let format_query ppt lst =
-  let format_item ppt query =
-    format_record [
+let pp_print_query ff lst =
+  let pp_print_item ff query =
+    pp_print_record [
       "query_timestamp",
       Format_string(fun x -> x.query_timestamp);
 
@@ -120,13 +124,13 @@ let format_query ppt lst =
 
       "query_key",
       Format_string (fun x -> x.query_key);
-    ] ppt query
+    ] ff query
   in
-  format_list ppt format_item lst
+  pp_print_list ff pp_print_item lst
 
-let format_response ppt lst =
-  let format_item ppt response =
-    format_record [
+let pp_print_response ff lst =
+  let pp_print_item ff response =
+    pp_print_record [
       "response_timestamp",
       Format_string(fun x -> x.response_timestamp);
 
@@ -141,23 +145,30 @@ let format_response ppt lst =
 
       "response_duration",
       Format_float(fun x -> x.response_duration);
-    ] ppt response
+    ] ff response
   in
-  format_list ppt format_item lst
+  pp_print_list ff pp_print_item lst
 
-let format ppt batch =
-  Format.fprintf ppt "@[<hv 2>{ @[batch_id = %d;@]@ @[batch_received_at = %S;@]@ @[batch_completed_at = %S;@]@ @[batch_status = %s;@]@ @[batch_query = %a;@]@ @[batch_response = %a;@] }@]"
+let pp_print ff batch =
+  Format.fprintf ff "@[<hv 1>{@ \
+                     @[<hv 1>batch_id =@ %d@];@ \
+                     @[<hv 1>batch_received_at =@ %S@];@ \
+                     @[<hv 1>batch_completed_at =@ %S@];@ \
+                     @[<hv 1>batch_status = %s@];@ \
+                     @[<hv 1>batch_query = %a@];@ \
+                     @[<hv 1>batch_response = %a@];@ \
+                     @]}"
     batch.batch_id
     batch.batch_received_at
     batch.batch_completed_at
     (match batch.batch_status with
      | Success -> "Success"
      | Error -> "Error")
-    format_query batch.batch_query
-    format_response batch.batch_response
+    pp_print_query batch.batch_query
+    pp_print_response batch.batch_response
 
 let print batch =
-  format Format.std_formatter batch
+  pp_print Format.std_formatter batch
 
 let random_tablename () =
   let tabledb = [|
