@@ -562,13 +562,8 @@ let maybe_store_last_insert_rowid concrete handle () =
       Handle.last_insert_rowid handle
       >>= function id -> x := id; Success.return()
 
-let exec ?binding concrete handle =
+let exec concrete handle =
   let open Success.Infix in
-  let concrete =
-    match binding with
-    | Some(b) -> ConcreteStatement.apply concrete b
-    | None -> concrete
-  in
   let rec loop lst =
     match lst with
     | stmt :: tl ->
@@ -588,13 +583,8 @@ let stream_of_slist m =
   | Success.Success(lst) -> S.of_list lst
   | Success.Error(_ as err) ->  S.from (fun _ -> Success.error err)
 
-let query ?binding concrete handle =
+let query concrete handle =
   let open Success.Infix in
-  let concrete =
-    match binding with
-    | Some(b) -> ConcreteStatement.apply concrete b
-    | None -> concrete
-  in
   Handle.prepare concrete handle
   |> stream_of_slist
   |> S.map (CompiledStatement.query concrete.ConcreteStatement.binding)
@@ -655,6 +645,9 @@ let statement sql =
 let rowid_binding r =
   fun _ -> INT(!r)
 
+let binding_apply ?rowid stmt binding =
+  ConcreteStatement.apply ?rowid stmt binding
+
 let bindings p s =
   let f x =
     List.map (fun(key, get) -> key, get x) p
@@ -662,7 +655,7 @@ let bindings p s =
   S.map f s
 
 let bindings_apply ?rowid b stmt =
-  S.map (ConcreteStatement.apply ?rowid stmt) b
+  S.map (binding_apply ?rowid stmt) b
 
 
 (* The database file *)
